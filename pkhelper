@@ -1,0 +1,71 @@
+#!/usr/bin/bash
+# Dino Fizzotti 2018
+# https://github.com/dinofizz/pkhelper
+
+usage() { echo -e "Usage: $0 -h <host> -p <port>\nExample: $0 -h www.example.com -p 443"; }
+
+while getopts ":h:p:" opt; do
+  case $opt in
+    h)
+      host=$OPTARG
+      ;;
+    p)
+      port=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      usage
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if ! test "$host" ; then
+    echo "-h is obligatory"
+    usage
+    exit 1
+fi
+
+if ! test "$port" ; then
+    echo "-p is obligatory"
+    usage
+    exit 1
+fi
+
+echo "Checking if $host directory exists."
+
+if [ -d "$host" ]; then
+    echo "$host directory exists, deleting."
+    rm -rf $host
+fi
+
+echo "Creating $host directory"
+mkdir $host
+
+fullchain=$host
+fullchain+="_fullchain.pem"
+
+echo "Connecting to $host:$port and saving full chain to file $host/$fullchain"
+openssl s_client -connect $host:$port -showcerts </dev/null 2>/dev/null | sed -n '/^-----BEGIN CERT/,/^-----END CERT/p' > "$host//$fullchain"
+
+awk -v var="$host" 'BEGIN {c=0;} /BEGIN CERT/{c++} { print > var"//"var"." c ".pem"}' < "$host\\$fullchain"
+
+cd $host
+
+cert_files="$host."[[:digit:]]*
+
+for cert_file in $cert_files; do
+	echo -e "\n\n$cert_file\n"
+	cat $cert_file
+	subject=$(openssl x509 -in $cert_file -subject -noout)
+	echo -e "\n\nSubject: $subject"
+	hex_fingerprint=$(openssl x509 -in $cert_file -fingerprint -noout)
+	echo -e "Public key fingerprint (hex values): $hex_fingerprint"
+	base64_fingerprint=$(openssl x509 -in $cert_file -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha1 -binary | openssl enc -base64)
+	echo -e "Base64 encoded public key fingerprint: $base64_fingerprint"
+done
